@@ -56,8 +56,8 @@ CheckedPtr instances instead of raw pointers.
 
 PartitionAlloc groups each set of similarly-sized allocations into a
 region of memory with identical slot sizes throughout the entire region.
-The reference count metadata for each allocation is stored prior to the
-allocation within its slot. PartitionAlloc can locate the metadata for
+The reference count metadata for each allocation is stored at the beginning
+or end of the slot for the allocation. PartitionAlloc can locate the metadata for
 an allocation given a pointer with any offset within the allocation
 without requiring any locator metadata to be embedded within the
 pointer, since it can trivially compute all slot boundaries within each
@@ -71,7 +71,15 @@ other regions such that an attempt to dereference a poisoned pointer
 causes the browser to immediately crash. These regions are illustrated
 below:
 
-image:media/BRPSpatial-ptr-zones.png[image,width=626,height=180]
+image:media/BRPSpatial-ptr-zones.png[Pointer zones]
+
+This is an illustration of the configuration that places reference counts
+after allocations, but analogous zones can be defined when reference
+counts are stored before allocations. In that configuration,
+the reference count is entirely within the exclusion zone for its
+containing slot and only its first byte is within the poison zone
+for the preceding slot. The remainder of the reference count is in
+the exclusion zone for the preceding slot.
 
 The reason that exclusion zones alone do not suffice such that we also
 need poison zones is that pointers sometimes legitimately range
@@ -85,11 +93,19 @@ pointers, BackupRefPtrSpatial maintains compatibility with such software
 idioms while also enforcing memory safety by detecting and blocking any
 attempt to dereference an out-of-bounds (poisoned) pointer.
 
+Each poison zone permits pointers to range a distance equal to the size
+of the cookie plus one byte beyond the usable space of the allocation to
+match the maximum distance that is supported by BackupRefPtr in the
+configuration that stores reference counts before allocations, which
+is the stricter configuration.
+
 We defined the new name BackupRefPtrSpatial for this mechanism as a
 notational convenience, but it is actually implemented as a set of
-inline extensions to BackupRefPtr that can be excluded by the
-preprocessor when BACKUP_REF_PTR_CHECK_SPATIAL is defined as 0. It also
-includes some minor extensions to PartitionAlloc.
+inline extensions to BackupRefPtr. It also includes some minor
+extensions to PartitionAlloc.
+
+BackupRefPtrSpatial can be enabled by setting the build argument
+`backup_ref_ptr_check_spatial = true`.
 
 === Pointer poisoning
 
@@ -111,19 +127,20 @@ data from freed allocations.
 === Bounds checks
 
 To check pointer updates and detect when a pointer enters its exclusion
-zone, BackupRefPtrSpatial first subtracts the size of per-slot metadata
+zone, BackupRefPtrSpatial first subtracts the size of per-slot prefix metadata
 from the original pointer to generate a value that we refer to hereafter
 as the “shifted pointer.” BackupRefPtrSpatial then looks up the slot in
 which the shifted pointer lands. Each pointer is restricted at each step
-to range from the beginning of its referent’s data region to the end of
-the metadata for the next allocation. Thus, by subtracting the size of
-the metadata prior to mapping the shifted pointer to its slot
+to range from the beginning of its referent’s data region to one byte past
+the end of its trailing cookie. By subtracting the size of
+the prefix metadata prior to mapping the shifted pointer to its slot
 BackupRefPtrSpatial can identify the slot for that pointer’s authorized
-referent, even when the pointer points into the metadata for the next
-allocation. This ability is actually provided by the base BackupRefPtr
-implementation. The detection of when the exclusion zone is entered is
-implemented by checking whether the shifted pointer plus the addend
-crosses either the lower or the upper slot boundary.
+referent, even when the pointer points into the prefix metadata for the next
+allocation. The detection of when the exclusion zone is entered is
+implemented first by checking whether the remaining space beyond the updated,
+shifted pointer within its slot is too small and next by checking whether the
+shifted pointer plus the addend crosses either the lower or the upper slot
+boundary.
 
 Next, BackupRefPtrSpatial detects whether the updated pointer lands in
 the poison zone, and it updates the OOB bit in the pointer accordingly.
