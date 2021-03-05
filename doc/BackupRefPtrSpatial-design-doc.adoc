@@ -73,13 +73,18 @@ below:
 
 image:media/BRPSpatial-ptr-zones.png[Pointer zones]
 
+If cookies are disabled, then the exclusion zone preceding an allocation
+ends at the beginning of the usable space for the allocation and the
+exclusion zone following a slot begins one byte past the end of the
+usable space for the allocation.
+
 This is an illustration of the configuration that places reference counts
 after allocations, but analogous zones can be defined when reference
 counts are stored before allocations. In that configuration,
 the reference count is entirely within the exclusion zone for its
 containing slot and only its first byte is within the poison zone
-for the preceding slot. The remainder of the reference count is in
-the exclusion zone for the preceding slot.
+for the preceding slot (assuming no cookies). The remainder of the
+reference count is in the exclusion zone for the preceding slot.
 
 The reason that exclusion zones alone do not suffice such that we also
 need poison zones is that pointers sometimes legitimately range
@@ -93,11 +98,10 @@ pointers, BackupRefPtrSpatial maintains compatibility with such software
 idioms while also enforcing memory safety by detecting and blocking any
 attempt to dereference an out-of-bounds (poisoned) pointer.
 
-Each poison zone permits pointers to range a distance equal to the size
-of the cookie plus one byte beyond the usable space of the allocation to
-match the maximum distance that is supported by BackupRefPtr in the
-configuration that stores reference counts before allocations, which
-is the stricter configuration.
+Pointers are permitted to point one byte beyond the usable space of the
+allocation for compatibility with iterative algorithms that generate
+such pointers. However, since the pointers would be poisoned while they
+are in that state, dereferences would be blocked.
 
 We defined the new name BackupRefPtrSpatial for this mechanism as a
 notational convenience, but it is actually implemented as a set of
@@ -132,7 +136,7 @@ from the original pointer to generate a value that we refer to hereafter
 as the “shifted pointer.” BackupRefPtrSpatial then looks up the slot in
 which the shifted pointer lands. Each pointer is restricted at each step
 to range from the beginning of its referent’s data region to one byte past
-the end of its trailing cookie. By subtracting the size of
+the end of its usable space. By subtracting the size of
 the prefix metadata prior to mapping the shifted pointer to its slot
 BackupRefPtrSpatial can identify the slot for that pointer’s authorized
 referent, even when the pointer points into the prefix metadata for the next
@@ -157,6 +161,20 @@ to avoid a spatial safety violation.
 BackupRefPtrSpatial does not affect the results of pointer comparisons,
 because it unconditionally strips the OOB bit from pointers when
 generating copies of pointers for comparison purposes.
+
+=== Pointer duplication
+
+Poisoned pointers are not permitted to be duplicated. That could be
+supported, but it does not appear to be necessary in Chrome according
+to preliminary tests. However, the check for the OOB bit during
+duplication may add overhead, and simply propagating the OOB bit to
+the duplicate could potentially induce less overhead.
+
+=== Pointer extraction
+
+When extracting the pointer value from the `CheckedPtr` template,
+which may be for the purpose of generating an endpoint for an
+iterative algorithm, the OOB bit is removed.
 
 === Extending to check types
 
@@ -241,6 +259,15 @@ specific about that ambiguity, if the pointer points to metadata, it
 could be interpreted either as a poisoned pointer authorized to
 reference the preceding slot or an underflowed pointer in the exclusion
 zone for the current slot.
+
+Array indexing is not currently checked. Implementing `operator[]`
+is unsupported when the type of the referent is `void`, etc. One
+option for overcoming this limitation would be to define separate
+variants of the `CheckedPtr` template, one for types that can be
+indexed and the other for the remaining types. The rewriter could
+select the appropriate variant in each case. Alternatively, compiler
+pass-based instrumentation that does not depend on C++ templates
+would not exhibit this limitation.
 
 BackupRefPtrSpatial depends on the same source code rewriting that is
 performed for BackupRefPtr, so it inherits the
