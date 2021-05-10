@@ -153,8 +153,14 @@ the poison zone, and it updates the OOB bit in the pointer accordingly.
 
 BackupRefPtrSpatial does not perform any additional checks or update the
 OOB bit in the pointer during upcasts. A valid upcast will not introduce
-a new spatial safety violation, and code should not depend on an upcast
-to avoid a spatial safety violation.
+a new spatial safety violation.
+
+Performing spatial checks during upcasts could incidentally detect violations
+that would not otherwise be detected, _e.g._ due to CheckedPtr being initialized
+using a pointer that did not satisfy the rules of BackupRefPtrSpatial even at
+the time it was initialized. To cover such cases, it would be more direct and
+comprehensive to add checks during initialization. This is discussed more in
+<<Coverage>>.
 
 === Pointer comparisons
 
