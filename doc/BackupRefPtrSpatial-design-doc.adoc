@@ -101,7 +101,9 @@ attempt to dereference an out-of-bounds (poisoned) pointer.
 Pointers are permitted to point one byte beyond the usable space of the
 allocation for compatibility with iterative algorithms that generate
 such pointers. However, since the pointers would be poisoned while they
-are in that state, dereferences would be blocked.
+are in that state, dereferences would be blocked. Alternative poison zone
+definitions can permit pointers to temporarily range further out of
+bounds as discussed in <<Alternative poison zones>>.
 
 We defined the new name BackupRefPtrSpatial for this mechanism as a
 notational convenience, but it is actually implemented as a set of
@@ -236,11 +238,23 @@ This compiler pass-based approach to injecting instrumentation would
 also have the benefit of extending enforcement to C code. This could
 even inject BackupRefPtr-based temporal safety checks for C code.
 
-=== Defining poison zones even if no metadata is stored in slots
+=== Alternative poison zones
 
-Even if no metadata is stored prior to each allocation, a poison zone
-can still be defined such that pointers authorized to access the
-preceding slot can temporarily range into that poison zone as long as
+Some code may temporarily take pointers further out of bounds than just
+a single byte beyond the usable space of the allocation. Alternative
+poison zone definitions can provide compatibility with such programs.
+For example, the poison zone for an allocation could extend all the way
+to the byte preceding the usable space for the next allocation while
+still avoiding ambiguity about the allocation to which the pointer
+authorizes access. In some allocator configurations, there is metadata
+placed between the allocations that would permit pointers to temporarily
+range significantly beyond the end of the usable space for the
+allocation with this definition of poison zones.
+
+Even if no metadata is stored between allocations, or if code causes a
+pointer to temporarily range beyond the metadata, a poison zone can be
+defined such that pointers authorized to access the preceding slot can
+temporarily range into the usable space for the next allocation as long as
 they are not dereferenced while pointing into it. The poison zone can
 cover a range at the beginning of each slot or extend through the entire
 slot, plus the range at the end of the preceding slot that is one byte
