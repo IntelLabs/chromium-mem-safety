@@ -103,7 +103,7 @@ allocation for compatibility with iterative algorithms that generate
 such pointers. However, since the pointers would be poisoned while they
 are in that state, dereferences would be blocked. Alternative poison zone
 definitions can permit pointers to temporarily range further out of
-bounds as discussed in <<Alternative poison zones>>.
+bounds as discussed in <<alternative poison zones>>.
 
 We defined the new name BackupRefPtrSpatial for this mechanism as a
 notational convenience, but it is actually implemented as a set of
